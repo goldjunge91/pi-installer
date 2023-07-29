@@ -22,6 +22,9 @@ function repair_menu() {
 function update_options_menu() {
   echo "Update Options Menu"
 }
+function settings_menu() {
+  source "/mnt/c/Users/tozzi/Github/pi-installer/scripts/ui/settings_menu.sh"
+}
 
 function main_ui() {
   top_border
@@ -36,6 +39,8 @@ function main_ui() {
   echo -e "| 4) Repair            |                                |"
   echo -e "|                      |                                |"
   echo -e "| 5) Update Options    |                                |"
+  echo -e "|                      |                                |"
+  echo -e "| 6) Settings          |                                |"
   hr
   blank_line
   quit_footer
@@ -100,6 +105,9 @@ function main_menu() {
         break;;
       5) clear && print_header
         update_options_menu
+        break;;
+      6) clear && print_header
+        settings_menu
         break;;
       Q|q)
         echo -e "${red}###### Exiting! ######${reset}"; echo

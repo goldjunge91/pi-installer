@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 
-#=======================================================================#
-# Copyright (C) 2020 - 2023 Dominik Willner <th33xitus@gmail.com>       #
-#                                                                       #
-# This file is part of KIAUH - Klipper Installation And Update Helper   #
-# https://github.com/th33xitus/kiauh                                    #
-#                                                                       #
-# This file may be distributed under the terms of the GNU GPLv3 license #
-#=======================================================================#
-
 set -e
 
 function settings_ui() {
-  read_kiauh_ini "${FUNCNAME[0]}"
+  read_pi-installer_ini "${FUNCNAME[0]}"
 
   local custom_repo="${custom_klipper_repo}"
   local custom_branch="${custom_klipper_repo_branch}"
@@ -56,9 +47,9 @@ function settings_ui() {
   fi
 
   top_border
-  echo -e "|     $(title_msg "~~~~~~~~~~~~ [ KIAUH Settings ] ~~~~~~~~~~~~~")     |"
+  echo -e "|     $(title_msg "~~~~~~~~~~~~ [ pi-installer Settings ] ~~~~~~~~~~~~~")    |"
   hr
-  echo -e "| Klipper:                                              |"
+  echo -e "| Docker:                                               |"
   echo -e "|   ● Repository:                                       |"
   printf  "|     %-70s|\n" "${custom_repo} (${custom_branch})"
   hr
@@ -92,25 +83,25 @@ function show_settings_help() {
   local default_cfg="${cyan}${HOME}/klipper_config${white}"
 
   top_border
-  echo -e "|    ~~~~~~ < ? > Help: KIAUH Settings < ? > ~~~~~~     |"
+  echo -e "|    ~~~~~~ < ? > Help: pi-installer Settings < ? > ~~~~~~     |"
   hr
   echo -e "| ${cyan}Install unstable releases:${white}                            |"
-  echo -e "| If set to ${green}true${white}, KIAUH installs/updates the software   |"
+  echo -e "| If set to ${green}true${white}, pi-installer installs/updates the software   |"
   echo -e "| with the latest, currently available release.         |"
   echo -e "| ${yellow}This will include alpha, beta and rc releases!${white}        |"
   blank_line
-  echo -e "| If set to ${red}false${white}, KIAUH installs/updates the software  |"
+  echo -e "| If set to ${red}false${white}, pi-installer installs/updates the software  |"
   echo -e "| with the most recent stable release.                  |"
   blank_line
   echo -e "| Default: ${red}false${white}                                        |"
   blank_line
   hr
   echo -e "| ${cyan}Backup before updating:${white}                               |"
-  echo -e "| If set to true, KIAUH will automatically create a     |"
+  echo -e "| If set to true, pi-installer will automatically create a     |"
   echo -e "| backup from the corresponding component you are about |"
   echo -e "| to update before actually updating it, preserving the |"
   echo -e "| current state of the component in a safe location.    |"
-  echo -e "| All backups are stored in '~/kiauh_backups'.          |"
+  echo -e "| All backups are stored in '~/pi-installer_backups'.          |"
   blank_line
   echo -e "| Default: ${red}false${white}                                        |"
   blank_line
