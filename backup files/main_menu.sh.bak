@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+#=======================================================================#
+# Copyright (C) 2020 - 2023 Dominik Willner <th33xitus@gmail.com>       #
+#                                                                       #
+# This file is part of KIAUH - Klipper Installation And Update Helper   #
+# https://github.com/th33xitus/kiauh                                    #
+#                                                                       #
+# This file may be distributed under the terms of the GNU GPLv3 license #
+#=======================================================================#
+
+set -e
+
+# Placeholder functions
+function new_install_menu() {
+  echo "New Install Menu"
+}
+
+function container_install_menu() {
+  #echo "Container Install Menu"
+  source "${KIAUH_SRCDIR}/scripts/ui/container_install.sh"
+}
+
+function program_install_menu() {
+  echo "Program Install Menu"
+}
+
+function repair_menu() {
+  echo "Repair Menu"
+}
+
+function update_options_menu() {
+  echo "Update Options Menu"
+}
+
+function main_ui() {
+  top_border
+  echo -e "|     ${cyan}~~~~~~~~~~~~~~~ [ Main Menu ] ~~~~~~~~~~~~~~~${reset}     |"
+  hr
+  echo -e "|  1) [New Install]       |                             |"
+  echo -e "|  2) [Container Install] |                             |"
+  echo -e "|  3) [Program Install]   |                             |"
+  echo -e "|  4) [Repair]            |                             |"
+  echo -e "|  5) [Update Options]    |                             |"
+  hr
+  quit_footer
+}
+
+function main_menu() {
+  clear && print_header
+  main_ui
+
+  local action
+  while true; do
+    read -p "${cyan}####### Perform action:${white} " action
+    case "${action}" in
+      1)clear && print_header
+        new_install_menu
+        break;;
+      2) clear && print_header
+        container_install_menu
+        break;;
+      3) clear && print_header
+        program_install_menu
+        break;;
+      4)clear && print_header
+        repair_menu
+        break;;
+      5)clear && print_header
+        update_options_menu
+        break;;
+      Q|q)
+        echo -e "${red}###### Exiting! ######${reset}"; echo
+        exit 0;;
+      *)
+        deny_action "main_ui";;
+    esac
+  done
+  main_menu
+}
