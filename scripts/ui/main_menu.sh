@@ -95,7 +95,7 @@ function main_menu() {
                 install_menu
             break;;
             2) clear && print_header
-                docker_compose_menu
+                find_docker_compose_files
             break;;
             3) clear && print_header
                 program_install_menu

@@ -18,6 +18,7 @@ function set_globals() {
     INITD="/etc/init.d"
     ETCDEF="/etc/default"
     HDD="/mnt/usb-hdd/"
+    COMPOSE_FILE=""
     
     #=================== KIAUH ====================#
     green=$(echo -en "\e[92m")

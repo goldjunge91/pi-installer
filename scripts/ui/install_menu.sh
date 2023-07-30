@@ -36,7 +36,7 @@ function install_menu() {
       1)
         do_action "start_docker_setup" "install_ui";;
       2)
-        do_action "container_install" "install_ui";;
+        do_action "container_install_menu" "install_ui";;
       3)
         do_action "install_mainsail" "install_ui";;
       4)

@@ -55,7 +55,6 @@ function print_header() {
   echo -e "|     $(title_msg "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")     |"
   bottom_border
 }
-
 function do_action() {
   clear && print_header
   ### $1 is the action the user wants to fire
