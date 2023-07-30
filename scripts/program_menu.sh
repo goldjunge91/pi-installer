@@ -13,13 +13,12 @@ function check_packages() {
             flag=1
         fi
     done
-    program_ui
     if [ $flag -eq 0 ]; then
         echo "Alle Pakete sind installiert."
     else
         echo "Einige Pakete sind nicht installiert."
     fi
-    program_ui  # kehrt zur Benutzeroberfläche zurück
+    return  # kehrt zur Benutzeroberfläche zurück
 }
 
 function install_packages() {
@@ -40,8 +39,9 @@ function install_packages() {
     else
         echo "Es gab Fehler bei der Installation einiger Pakete."
     fi
-    program_ui  # kehrt zur Benutzeroberfläche zurück
+    return  # kehrt zur Benutzeroberfläche zurück
 }
+
 function program_ui() {
     top_border
     echo -e "|     $(title_msg "~~~~~~~~~~~~~~~ [ programm Menu ] ~~~~~~~~~~~~~~~")     |"
@@ -62,15 +62,16 @@ function program_ui() {
     quit_footer
 }
 function program_menu() {
-    while true; do
-        clear && print_header
-        program_ui || return 1 # Wenn keine Docker-Compose-Dateien gefunden wurden, gehe zurück zum Hauptmenü
+    clear -x && sudo -v && clear -x # (re)cache sudo credentials so password prompt doesn't bork ui
+    print_header
+    program_ui
     local action
     while true; do
         read -p "${cyan}####### Perform action:${white} " action
         case "${action}" in
             1)
-            do_action "check_packages" "program_ui";;
+            check_packages
+            program_menu;;
             2)
             do_action "install_packages" "program_ui";;
             3)
@@ -99,5 +100,4 @@ function program_menu() {
             deny_action "program_ui";;
         esac
     done
-    program_menu
 }
