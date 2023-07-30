@@ -41,7 +41,11 @@ function back_footer() {
   echo -e "|                       ${green}B) « Back${white}                       |"
   bottom_border
 }
-
+function back/close_footer() {
+  hr
+  echo -e "|         ${green}B) « Back${white}         |        ${red}Q) Quit${white}            |"
+  bottom_border
+}
 function back_help_footer() {
   hr
   echo -e "|         ${green}B) « Back${white}         |        ${yellow}H) Help [?]${white}        |"

@@ -172,550 +172,550 @@ function toggle_backup_before_update() {
   fi
 }
 
-function set_custom_klipper_repo() {
-  read_pi-installer_ini "${FUNCNAME[0]}"
-  local repo=${1} branch=${2}
-
-  sed -i "/^custom_klipper_repo=/d" "${INI_FILE}"
-  sed -i '$a'"custom_klipper_repo=${repo}" "${INI_FILE}"
-  sed -i "/^custom_klipper_repo_branch=/d" "${INI_FILE}"
-  sed -i '$a'"custom_klipper_repo_branch=${branch}" "${INI_FILE}"
-}
-
-function add_to_application_updates() {
-  read_pi-installer_ini "${FUNCNAME[0]}"
-
-  local application="${1}"
-  local app_update_state="${application_updates_available}"
-
-  if ! grep -Eq "${application}" <<<"${app_update_state}"; then
-    app_update_state="${app_update_state}${application},"
-    sed -i "/application_updates_available=/s/=.*/=${app_update_state}/" "${INI_FILE}"
-  fi
-}
-
-#================================================#
-#=============== HANDLE SERVICES ================#
-#================================================#
-
-function do_action_service() {
-  local services action=${1} service=${2}
-  services=$(find "${SYSTEMD}" -maxdepth 1 -regextype posix-extended -regex "${SYSTEMD}/${service}(-[0-9a-zA-Z]+)?.service" | sort)
-
-  if [[ -n ${services} ]]; then
-    for service in ${services}; do
-      service=$(echo "${service}" | rev | cut -d"/" -f1 | rev)
-      status_msg "${action^} ${service} ..."
-
-      if sudo systemctl "${action}" "${service}"; then
-        log_info "${service}: ${action} > success"
-        ok_msg "${action^} ${service} successfull!"
-      else
-        log_warning "${service}: ${action} > failed"
-        warn_msg "${action^} ${service} failed!"
-      fi
-    done
-  fi
-}
-
-#================================================#
-#================ DEPENDENCIES ==================#
-#================================================#
-
-### returns 'true' if python version >= 3.7
-function python3_check() {
-  local major minor passed
-
-  major=$(python3 --version | cut -d" " -f2 | cut -d"." -f1)
-  minor=$(python3 --version | cut -d"." -f2)
-
-  if ((major >= 3 && minor >= 7)); then
-    passed="true"
-  else
-    passed="false"
-  fi
-
-  echo "${passed}"
-}
-
-function dependency_check() {
-  local dep=("${@}")
-  local packages log_name="dependencies"
-  status_msg "Checking for the following dependencies:"
-
-  #check if package is installed, if not write its name into array
-  for pkg in "${dep[@]}"; do
-    echo -e "${cyan}● ${pkg} ${white}"
-    [[ ! $(dpkg-query -f'${Status}' --show "${pkg}" 2>/dev/null) = *\ installed ]] &&
-      packages+=("${pkg}")
-  done
-
-  #if array is not empty, install packages from array
-  if ((${#packages[@]} > 0)); then
-    status_msg "Installing the following dependencies:"
-    for package in "${packages[@]}"; do
-      echo -e "${cyan}● ${package} ${white}"
-    done
-    echo
-
-    # update system package lists if stale
-    update_system_package_lists
-
-    # install required packages
-    install_system_packages "${log_name}" "packages[@]"
-
-  else
-    ok_msg "Dependencies already met!"
-    return
-  fi
-}
-
-function fetch_webui_ports() {
-  local port interfaces=("mainsail" "fluidd" "octoprint")
-
-  ### read ports from possible installed interfaces and write them to ~/.pi-installer.ini
-  for interface in "${interfaces[@]}"; do
-    if [[ -f "/etc/nginx/sites-available/${interface}" ]]; then
-      port=$(grep -E "listen" "/etc/nginx/sites-available/${interface}" | head -1 | sed 's/^\s*//' | sed 's/;$//' | cut -d" " -f2)
-      if ! grep -Eq "${interface}_port" "${INI_FILE}"; then
-        sed -i '$a'"${interface}_port=${port}" "${INI_FILE}"
-      else
-        sed -i "/^${interface}_port/d" "${INI_FILE}"
-        sed -i '$a'"${interface}_port=${port}" "${INI_FILE}"
-      fi
-    else
-      sed -i "/^${interface}_port/d" "${INI_FILE}"
-    fi
-  done
-}
-
-#================================================#
-#=================== SYSTEM =====================#
-#================================================#
-
-function create_required_folders() {
-  local printer_data=${1} folders
-  folders=("backup" "certs" "config" "database" "gcodes" "comms" "logs" "systemd")
-
-  for folder in "${folders[@]}"; do
-    local dir="${printer_data}/${folder}"
-
-    ### remove possible symlink created by moonraker
-    if [[ -L "${dir}" && -d "${dir}" ]]; then
-      rm "${dir}"
-    fi
-
-    if [[ ! -d "${dir}" ]]; then
-      status_msg "Creating folder '${dir}' ..."
-      mkdir -p "${dir}"
-      ok_msg "Folder '${dir}' created!"
-    fi
-  done
-}
-
-function update_system_package_lists() {
-  local cache_mtime update_age update_interval silent
-
-  if [[ $1 == '--silent' ]]; then silent="true"; fi
-
-  if [[ -e /var/lib/apt/periodic/update-success-stamp ]]; then
-    cache_mtime="$(stat -c %Y /var/lib/apt/periodic/update-success-stamp)"
-  elif [[ -e /var/lib/apt/lists ]]; then
-    cache_mtime="$(stat -c %Y /var/lib/apt/lists)"
-  else
-    log_warning "Failure determining package cache age, forcing update"
-    cache_mtime=0
-  fi
-
-  update_age="$(($(date +'%s') - cache_mtime))"
-  update_interval=$((48 * 60 * 60)) # 48hrs
-
-  # update if cache is greater than update_interval
-  if ((update_age > update_interval)); then
-    if [[ ! ${silent} == "true" ]]; then status_msg "Updating package lists..."; fi
-    if ! sudo apt-get update --allow-releaseinfo-change &>/dev/null; then
-      log_error "Failure while updating package lists!"
-      if [[ ! ${silent} == "true" ]]; then error_msg "Updating package lists failed!"; fi
-      return 1
-    else
-      log_info "Package lists updated successfully"
-      if [[ ! ${silent} == "true" ]]; then status_msg "Updated package lists."; fi
-    fi
-  else
-    log_info "Package lists updated recently, skipping update..."
-  fi
-}
-
-function check_system_updates() {
-  local updates_avail status
-  if ! update_system_package_lists --silent; then
-    status="${red}Update check failed!     ${white}"
-  else
-    updates_avail="$(apt list --upgradeable 2>/dev/null | sed "1d")"
-
-    if [[ -n ${updates_avail} ]]; then
-      status="${yellow}System upgrade available!${white}"
-      # add system to application_updates_available in pi-installer.ini
-      add_to_application_updates "system"
-    else
-      status="${green}System up to date!       ${white}"
-    fi
-  fi
-
-  echo "${status}"
-}
-
-function upgrade_system_packages() {
-  status_msg "Upgrading System ..."
-  update_system_package_lists
-  if sudo apt-get upgrade -y; then
-    print_confirm "Upgrade complete! Check the log above!\n ${yellow}pi-installer will not install any dist-upgrades or\n any packages which have been held back!${green}"
-  else
-    print_error "System upgrade failed! Please look for any errors printed above!"
-  fi
-}
-
-function install_system_packages() {
-  local log_name="$1"
-  local packages=("${!2}")
-  status_msg "Installing packages..."
-  if sudo apt-get install -y "${packages[@]}"; then
-    ok_msg "${log_name^} packages installed!"
-  else
-    log_error "Failure while installing ${log_name,,} packages"
-    error_msg "Installing ${log_name} packages failed!"
-    exit 1 # exit pi-installer
-  fi
-}
-
-function check_usergroups() {
-  local group_dialout group_tty
-
-  if grep -q "dialout" </etc/group && ! grep -q "dialout" <(groups "${USER}"); then
-    group_dialout="false"
-  fi
-
-  if grep -q "tty" </etc/group && ! grep -q "tty" <(groups "${USER}"); then
-    group_tty="false"
-  fi
-
-  if [[ ${group_dialout} == "false" || ${group_tty} == "false" ]]; then
-    top_border
-    echo -e "| ${yellow}WARNING: Your current user is not in group:${white}           |"
-    [[ ${group_tty} == "false" ]] &&
-      echo -e "| ${yellow}● tty${white}                                                 |"
-    [[ ${group_dialout} == "false" ]] &&
-      echo -e "| ${yellow}● dialout${white}                                             |"
-    blank_line
-    echo -e "| It is possible that you won't be able to successfully |"
-    echo -e "| connect and/or flash the controller board without     |"
-    echo -e "| your user being a member of that group.               |"
-    echo -e "| If you want to add the current user to the group(s)   |"
-    echo -e "| listed above, answer with 'Y'. Else skip with 'n'.    |"
-    blank_line
-    echo -e "| ${yellow}INFO:${white}                                                 |"
-    echo -e "| ${yellow}Relog required for group assignments to take effect!${white}  |"
-    bottom_border
-
-    local yn
-    while true; do
-      read -p "${cyan}###### Add user '${USER}' to group(s) now? (Y/n):${white} " yn
-      case "${yn}" in
-      Y | y | Yes | yes | "")
-        select_msg "Yes"
-        status_msg "Adding user '${USER}' to group(s) ..."
-        if [[ ${group_tty} == "false" ]]; then
-          sudo usermod -a -G tty "${USER}" && ok_msg "Group 'tty' assigned!"
-        fi
-        if [[ ${group_dialout} == "false" ]]; then
-          sudo usermod -a -G dialout "${USER}" && ok_msg "Group 'dialout' assigned!"
-        fi
-        ok_msg "Remember to relog/restart this machine for the group(s) to be applied!"
-        break
-        ;;
-      N | n | No | no)
-        select_msg "No"
-        break
-        ;;
-      *)
-        print_error "Invalid command!"
-        ;;
-      esac
-    done
-  fi
-}
-
-function set_custom_hostname() {
-  echo
-  top_border
-  echo -e "|  Changing the hostname of this machine allows you to  |"
-  echo -e "|  access a webinterface that is configured for port 80 |"
-  echo -e "|  by simply typing '<hostname>.local' in the browser.  |"
-  echo -e "|                                                       |"
-  echo -e "|  E.g.: If you set the hostname to 'my-printer' you    |"
-  echo -e "|        can open Mainsail / Fluidd / Octoprint by      |"
-  echo -e "|        browsing to: http://my-printer.local           |"
-  bottom_border
-
-  local yn
-  while true; do
-    read -p "${cyan}###### Do you want to change the hostname? (y/N):${white} " yn
-    case "${yn}" in
-    Y | y | Yes | yes)
-      select_msg "Yes"
-      change_hostname
-      break
-      ;;
-    N | n | No | no | "")
-      select_msg "No"
-      break
-      ;;
-    *)
-      error_msg "Invalid command!"
-      ;;
-    esac
-  done
-}
-
-function change_hostname() {
-  local new_hostname regex="^[^\-\_]+([0-9a-z]\-{0,1})+[^\-\_]+$"
-  echo
-  top_border
-  echo -e "|  ${green}Allowed characters: a-z, 0-9 and single '-'${white}          |"
-  echo -e "|  ${red}No special characters allowed!${white}                       |"
-  echo -e "|  ${red}No leading or trailing '-' allowed!${white}                  |"
-  bottom_border
-
-  while true; do
-    read -p "${cyan}###### Please set the new hostname:${white} " new_hostname
-
-    if [[ ${new_hostname} =~ ${regex} ]]; then
-      local yn
-      while true; do
-        echo
-        read -p "${cyan}###### Do you want '${new_hostname}' to be the new hostname? (Y/n):${white} " yn
-        case "${yn}" in
-        Y | y | Yes | yes | "")
-          select_msg "Yes"
-          set_hostname "${new_hostname}"
-          break
-          ;;
-        N | n | No | no)
-          select_msg "No"
-          abort_msg "Skip hostname change ..."
-          break
-          ;;
-        *)
-          print_error "Invalid command!"
-          ;;
-        esac
-      done
-    else
-      warn_msg "'${new_hostname}' is not a valid hostname!"
-    fi
-    break
-  done
-}
-
-function set_hostname() {
-  local new_hostname=${1} current_date
-  #check for dependencies
-  local dep=(avahi-daemon)
-  dependency_check "${dep[@]}"
-
-  #create host file if missing or create backup of existing one with current date&time
-  if [[ -f /etc/hosts ]]; then
-    current_date=$(get_date)
-    status_msg "Creating backup of hosts file ..."
-    sudo cp "/etc/hosts" "/etc/hosts.${current_date}.bak"
-    ok_msg "Backup done!"
-    ok_msg "File:'/etc/hosts.${current_date}.bak'"
-  else
-    sudo touch /etc/hosts
-  fi
-
-  #set new hostname in /etc/hostname
-  status_msg "Setting hostname to '${new_hostname}' ..."
-  status_msg "Please wait ..."
-  sudo hostnamectl set-hostname "${new_hostname}"
-
-  #write new hostname to /etc/hosts
-  status_msg "Writing new hostname to /etc/hosts ..."
-  echo "127.0.0.1       ${new_hostname}" | sudo tee -a /etc/hosts &>/dev/null
-  ok_msg "New hostname successfully configured!"
-  ok_msg "Remember to reboot for the changes to take effect!"
-}
-
-#================================================#
-#============ INSTANCE MANAGEMENT ===============#
-#================================================#
-
-###
-# takes in a systemd service files full path and
-# returns the sub-string with the instance name
+#function set_custom_klipper_repo() {
+#  read_pi-installer_ini "${FUNCNAME[0]}"
+#  local repo=${1} branch=${2}
 #
-# @param {string}: service file absolute path
-#                  (e.g. '/etc/systemd/system/klipper-<name>.service')
+#  sed -i "/^custom_klipper_repo=/d" "${INI_FILE}"
+#  sed -i '$a'"custom_klipper_repo=${repo}" "${INI_FILE}"
+#  sed -i "/^custom_klipper_repo_branch=/d" "${INI_FILE}"
+#  sed -i '$a'"custom_klipper_repo_branch=${branch}" "${INI_FILE}"
+#}
 #
-# => return sub-string containing only the <name> part of the full string
+#function add_to_application_updates() {
+#  read_pi-installer_ini "${FUNCNAME[0]}"
 #
-function get_instance_name() {
-  local instance=${1}
-  local name
-
-  name=$(echo "${instance}" | rev | cut -d"/" -f1 | cut -d"." -f2 | cut -d"-" -f1 | rev)
-
-  echo "${name}"
-}
-
-###
-# returns the instance name/identifier of the klipper service
-# if the klipper service is part of a multi instance setup
-# otherwise returns an emtpy string
+#  local application="${1}"
+#  local app_update_state="${application_updates_available}"
 #
-# @param {string}: name - klipper service name (e.g. klipper-name.service)
+#  if ! grep -Eq "${application}" <<<"${app_update_state}"; then
+#    app_update_state="${app_update_state}${application},"
+#    sed -i "/application_updates_available=/s/=.*/=${app_update_state}/" "${INI_FILE}"
+#  fi
+#}
 #
-function get_klipper_instance_name() {
-  local instance=${1}
-  local name
-
-  name=$(echo "${instance}" | rev | cut -d"/" -f1 | cut -d"." -f2 | rev)
-
-  local regex="^klipper-[0-9a-zA-Z]+$"
-  if [[ ${name} =~ ${regex} ]]; then
-    name=$(echo "${name}" | cut -d"-" -f2)
-  else
-    name=""
-  fi
-
-  echo "${name}"
-}
-
-###
-# loops through all installed klipper services and saves
-# each instances name in a comma separated format to the pi-installer.ini
+##================================================#
+##=============== HANDLE SERVICES ================#
+##================================================#
 #
-function set_multi_instance_names() {
-  read_pi-installer_ini "${FUNCNAME[0]}"
-
-  local name
-  local names=""
-  local services
-
-  services=$(klipper_systemd)
-
-  ###
-  # if value of 'multi_instance_names' is not an empty
-  # string, delete its value, so it can be re-written
-  if [[ -n ${multi_instance_names} ]]; then
-    sed -i "/multi_instance_names=/s/=.*/=/" "${INI_FILE}"
-  fi
-
-  for svc in ${services}; do
-    name=$(get_klipper_instance_name "${svc}")
-
-    if ! grep -Eq "${name}" <<<"${names}"; then
-      names="${names}${name},"
-    fi
-
-  done
-
-  # write up-to-date instance name string to pi-installer.ini
-  sed -i "/multi_instance_names=/s/=.*/=${names}/" "${INI_FILE}"
-}
-
-###
-# Helper function that returns all configured instance names
+#function do_action_service() {
+#  local services action=${1} service=${2}
+#  services=$(find "${SYSTEMD}" -maxdepth 1 -regextype posix-extended -regex "${SYSTEMD}/${service}(-[0-9a-zA-Z]+)?.service" | sort)
 #
-# => return an empty string if 0 or 1 klipper instance is installed
-# => return space-separated string for names of the configured instances
-#           if 2 or more klipper instances are installed
+#  if [[ -n ${services} ]]; then
+#    for service in ${services}; do
+#      service=$(echo "${service}" | rev | cut -d"/" -f1 | rev)
+#      status_msg "${action^} ${service} ..."
 #
-function get_multi_instance_names() {
-  read_pi-installer_ini "${FUNCNAME[0]}"
-  local instance_names=()
-
-  ###
-  # convert the comma separates string from the .pi-installer.ini into
-  # an array of instance names. a single instance installation
-  # results in an empty instance_names array
-  IFS=',' read -r -a instance_names <<<"${multi_instance_names}"
-
-  echo "${instance_names[@]}"
-}
-
-###
-# helper function that returns all possibly available absolute
-# klipper config directory paths based on their instance name.
+#      if sudo systemctl "${action}" "${service}"; then
+#        log_info "${service}: ${action} > success"
+#        ok_msg "${action^} ${service} successfull!"
+#      else
+#        log_warning "${service}: ${action} > failed"
+#        warn_msg "${action^} ${service} failed!"
+#      fi
+#    done
+#  fi
+#}
 #
-# => return an empty string if klipper is not installed
-# => return space-separated string of absolute config directory paths
+##================================================#
+##================ DEPENDENCIES ==================#
+##================================================#
 #
-function get_config_folders() {
-  local cfg_dirs=()
-  local instance_names
-  instance_names=$(get_multi_instance_names)
-
-  if [[ -n ${instance_names} ]]; then
-    for name in ${instance_names}; do
-      ###
-      # by pi-installer convention, all instance names of only numbers
-      # need to be prefixed with 'printer_'
-      if [[ ${name} =~ ^[0-9]+$ ]]; then
-        cfg_dirs+=("${HOME}/printer_${name}_data/config")
-      else
-        cfg_dirs+=("${HOME}/${name}_data/config")
-      fi
-    done
-  elif [[ -z ${instance_names} && $(klipper_systemd | wc -w) -gt 0 ]]; then
-    cfg_dirs+=("${HOME}/printer_data/config")
-  else
-    cfg_dirs=()
-  fi
-
-  echo "${cfg_dirs[@]}"
-}
-
-###
-# helper function that returns all available absolute directory paths
-# based on their instance name and specified target folder
+#### returns 'true' if python version >= 3.7
+#function python3_check() {
+#  local major minor passed
 #
-# @param {string}: folder name - target instance folder name (e.g. config)
+#  major=$(python3 --version | cut -d" " -f2 | cut -d"." -f1)
+#  minor=$(python3 --version | cut -d"." -f2)
 #
-# => return an empty string if klipper is not installed
-# => return space-separated string of absolute directory paths
+#  if ((major >= 3 && minor >= 7)); then
+#    passed="true"
+#  else
+#    passed="false"
+#  fi
 #
-function get_instance_folder_path() {
-  local folder_name=${1}
-  local folder_paths=()
-  local instance_names
-  local path
-
-  instance_names=$(get_multi_instance_names)
-
-  if [[ -n ${instance_names} ]]; then
-    for name in ${instance_names}; do
-      ###
-      # by pi-installer convention, all instance names of only numbers
-      # need to be prefixed with 'printer_'
-      if [[ ${name} =~ ^[0-9]+$ ]]; then
-        path="${HOME}/printer_${name}_data/${folder_name}"
-        if [[ -d ${path} ]]; then
-          folder_paths+=("${path}")
-        fi
-      else
-        path="${HOME}/${name}_data/${folder_name}"
-        if [[ -d ${path} ]]; then
-          folder_paths+=("${path}")
-        fi
-      fi
-    done
-  elif [[ -z ${instance_names} && $(klipper_systemd | wc -w) -gt 0 ]]; then
-    path="${HOME}/printer_data/${folder_name}"
-    if [[ -d ${path} ]]; then
-      folder_paths+=("${path}")
-    fi
-  fi
-
-  echo "${folder_paths[@]}"
-}
+#  echo "${passed}"
+#}
+#
+#function dependency_check() {
+#  local dep=("${@}")
+#  local packages log_name="dependencies"
+#  status_msg "Checking for the following dependencies:"
+#
+#  #check if package is installed, if not write its name into array
+#  for pkg in "${dep[@]}"; do
+#    echo -e "${cyan}● ${pkg} ${white}"
+#    [[ ! $(dpkg-query -f'${Status}' --show "${pkg}" 2>/dev/null) = *\ installed ]] &&
+#      packages+=("${pkg}")
+#  done
+#
+#  #if array is not empty, install packages from array
+#  if ((${#packages[@]} > 0)); then
+#    status_msg "Installing the following dependencies:"
+#    for package in "${packages[@]}"; do
+#      echo -e "${cyan}● ${package} ${white}"
+#    done
+#    echo
+#
+#    # update system package lists if stale
+#    update_system_package_lists
+#
+#    # install required packages
+#    install_system_packages "${log_name}" "packages[@]"
+#
+#  else
+#    ok_msg "Dependencies already met!"
+#    return
+#  fi
+#}
+#
+#function fetch_webui_ports() {
+#  local port interfaces=("mainsail" "fluidd" "octoprint")
+#
+#  ### read ports from possible installed interfaces and write them to ~/.pi-installer.ini
+#  for interface in "${interfaces[@]}"; do
+#    if [[ -f "/etc/nginx/sites-available/${interface}" ]]; then
+#      port=$(grep -E "listen" "/etc/nginx/sites-available/${interface}" | head -1 | sed 's/^\s*//' | sed 's/;$//' | cut -d" " -f2)
+#      if ! grep -Eq "${interface}_port" "${INI_FILE}"; then
+#        sed -i '$a'"${interface}_port=${port}" "${INI_FILE}"
+#      else
+#        sed -i "/^${interface}_port/d" "${INI_FILE}"
+#        sed -i '$a'"${interface}_port=${port}" "${INI_FILE}"
+#      fi
+#    else
+#      sed -i "/^${interface}_port/d" "${INI_FILE}"
+#    fi
+#  done
+#}
+#
+##================================================#
+##=================== SYSTEM =====================#
+##================================================#
+#
+#function create_required_folders() {
+#  local printer_data=${1} folders
+#  folders=("backup" "certs" "config" "database" "gcodes" "comms" "logs" "systemd")
+#
+#  for folder in "${folders[@]}"; do
+#    local dir="${printer_data}/${folder}"
+#
+#    ### remove possible symlink created by moonraker
+#    if [[ -L "${dir}" && -d "${dir}" ]]; then
+#      rm "${dir}"
+#    fi
+#
+#    if [[ ! -d "${dir}" ]]; then
+#      status_msg "Creating folder '${dir}' ..."
+#      mkdir -p "${dir}"
+#      ok_msg "Folder '${dir}' created!"
+#    fi
+#  done
+#}
+#
+#function update_system_package_lists() {
+#  local cache_mtime update_age update_interval silent
+#
+#  if [[ $1 == '--silent' ]]; then silent="true"; fi
+#
+#  if [[ -e /var/lib/apt/periodic/update-success-stamp ]]; then
+#    cache_mtime="$(stat -c %Y /var/lib/apt/periodic/update-success-stamp)"
+#  elif [[ -e /var/lib/apt/lists ]]; then
+#    cache_mtime="$(stat -c %Y /var/lib/apt/lists)"
+#  else
+#    log_warning "Failure determining package cache age, forcing update"
+#    cache_mtime=0
+#  fi
+#
+#  update_age="$(($(date +'%s') - cache_mtime))"
+#  update_interval=$((48 * 60 * 60)) # 48hrs
+#
+#  # update if cache is greater than update_interval
+#  if ((update_age > update_interval)); then
+#    if [[ ! ${silent} == "true" ]]; then status_msg "Updating package lists..."; fi
+#    if ! sudo apt-get update --allow-releaseinfo-change &>/dev/null; then
+#      log_error "Failure while updating package lists!"
+#      if [[ ! ${silent} == "true" ]]; then error_msg "Updating package lists failed!"; fi
+#      return 1
+#    else
+#      log_info "Package lists updated successfully"
+#      if [[ ! ${silent} == "true" ]]; then status_msg "Updated package lists."; fi
+#    fi
+#  else
+#    log_info "Package lists updated recently, skipping update..."
+#  fi
+#}
+#
+#function check_system_updates() {
+#  local updates_avail status
+#  if ! update_system_package_lists --silent; then
+#    status="${red}Update check failed!     ${white}"
+#  else
+#    updates_avail="$(apt list --upgradeable 2>/dev/null | sed "1d")"
+#
+#    if [[ -n ${updates_avail} ]]; then
+#      status="${yellow}System upgrade available!${white}"
+#      # add system to application_updates_available in pi-installer.ini
+#      add_to_application_updates "system"
+#    else
+#      status="${green}System up to date!       ${white}"
+#    fi
+#  fi
+#
+#  echo "${status}"
+#}
+#
+#function upgrade_system_packages() {
+#  status_msg "Upgrading System ..."
+#  update_system_package_lists
+#  if sudo apt-get upgrade -y; then
+#    print_confirm "Upgrade complete! Check the log above!\n ${yellow}pi-installer will not install any dist-upgrades or\n any packages which have been held back!${green}"
+#  else
+#    print_error "System upgrade failed! Please look for any errors printed above!"
+#  fi
+#}
+#
+#function install_system_packages() {
+#  local log_name="$1"
+#  local packages=("${!2}")
+#  status_msg "Installing packages..."
+#  if sudo apt-get install -y "${packages[@]}"; then
+#    ok_msg "${log_name^} packages installed!"
+#  else
+#    log_error "Failure while installing ${log_name,,} packages"
+#    error_msg "Installing ${log_name} packages failed!"
+#    exit 1 # exit pi-installer
+#  fi
+#}
+#
+#function check_usergroups() {
+#  local group_dialout group_tty
+#
+#  if grep -q "dialout" </etc/group && ! grep -q "dialout" <(groups "${USER}"); then
+#    group_dialout="false"
+#  fi
+#
+#  if grep -q "tty" </etc/group && ! grep -q "tty" <(groups "${USER}"); then
+#    group_tty="false"
+#  fi
+#
+#  if [[ ${group_dialout} == "false" || ${group_tty} == "false" ]]; then
+#    top_border
+#    echo -e "| ${yellow}WARNING: Your current user is not in group:${white}           |"
+#    [[ ${group_tty} == "false" ]] &&
+#      echo -e "| ${yellow}● tty${white}                                                 |"
+#    [[ ${group_dialout} == "false" ]] &&
+#      echo -e "| ${yellow}● dialout${white}                                             |"
+#    blank_line
+#    echo -e "| It is possible that you won't be able to successfully |"
+#    echo -e "| connect and/or flash the controller board without     |"
+#    echo -e "| your user being a member of that group.               |"
+#    echo -e "| If you want to add the current user to the group(s)   |"
+#    echo -e "| listed above, answer with 'Y'. Else skip with 'n'.    |"
+#    blank_line
+#    echo -e "| ${yellow}INFO:${white}                                                 |"
+#    echo -e "| ${yellow}Relog required for group assignments to take effect!${white}  |"
+#    bottom_border
+#
+#    local yn
+#    while true; do
+#      read -p "${cyan}###### Add user '${USER}' to group(s) now? (Y/n):${white} " yn
+#      case "${yn}" in
+#      Y | y | Yes | yes | "")
+#        select_msg "Yes"
+#        status_msg "Adding user '${USER}' to group(s) ..."
+#        if [[ ${group_tty} == "false" ]]; then
+#          sudo usermod -a -G tty "${USER}" && ok_msg "Group 'tty' assigned!"
+#        fi
+#        if [[ ${group_dialout} == "false" ]]; then
+#          sudo usermod -a -G dialout "${USER}" && ok_msg "Group 'dialout' assigned!"
+#        fi
+#        ok_msg "Remember to relog/restart this machine for the group(s) to be applied!"
+#        break
+#        ;;
+#      N | n | No | no)
+#        select_msg "No"
+#        break
+#        ;;
+#      *)
+#        print_error "Invalid command!"
+#        ;;
+#      esac
+#    done
+#  fi
+#}
+#
+#function set_custom_hostname() {
+#  echo
+#  top_border
+#  echo -e "|  Changing the hostname of this machine allows you to  |"
+#  echo -e "|  access a webinterface that is configured for port 80 |"
+#  echo -e "|  by simply typing '<hostname>.local' in the browser.  |"
+#  echo -e "|                                                       |"
+#  echo -e "|  E.g.: If you set the hostname to 'my-printer' you    |"
+#  echo -e "|        can open Mainsail / Fluidd / Octoprint by      |"
+#  echo -e "|        browsing to: http://my-printer.local           |"
+#  bottom_border
+#
+#  local yn
+#  while true; do
+#    read -p "${cyan}###### Do you want to change the hostname? (y/N):${white} " yn
+#    case "${yn}" in
+#    Y | y | Yes | yes)
+#      select_msg "Yes"
+#      change_hostname
+#      break
+#      ;;
+#    N | n | No | no | "")
+#      select_msg "No"
+#      break
+#      ;;
+#    *)
+#      error_msg "Invalid command!"
+#      ;;
+#    esac
+#  done
+#}
+#
+#function change_hostname() {
+#  local new_hostname regex="^[^\-\_]+([0-9a-z]\-{0,1})+[^\-\_]+$"
+#  echo
+#  top_border
+#  echo -e "|  ${green}Allowed characters: a-z, 0-9 and single '-'${white}          |"
+#  echo -e "|  ${red}No special characters allowed!${white}                       |"
+#  echo -e "|  ${red}No leading or trailing '-' allowed!${white}                  |"
+#  bottom_border
+#
+#  while true; do
+#    read -p "${cyan}###### Please set the new hostname:${white} " new_hostname
+#
+#    if [[ ${new_hostname} =~ ${regex} ]]; then
+#      local yn
+#      while true; do
+#        echo
+#        read -p "${cyan}###### Do you want '${new_hostname}' to be the new hostname? (Y/n):${white} " yn
+#        case "${yn}" in
+#        Y | y | Yes | yes | "")
+#          select_msg "Yes"
+#          set_hostname "${new_hostname}"
+#          break
+#          ;;
+#        N | n | No | no)
+#          select_msg "No"
+#          abort_msg "Skip hostname change ..."
+#          break
+#          ;;
+#        *)
+#          print_error "Invalid command!"
+#          ;;
+#        esac
+#      done
+#    else
+#      warn_msg "'${new_hostname}' is not a valid hostname!"
+#    fi
+#    break
+#  done
+#}
+#
+#function set_hostname() {
+#  local new_hostname=${1} current_date
+#  #check for dependencies
+#  local dep=(avahi-daemon)
+#  dependency_check "${dep[@]}"
+#
+#  #create host file if missing or create backup of existing one with current date&time
+#  if [[ -f /etc/hosts ]]; then
+#    current_date=$(get_date)
+#    status_msg "Creating backup of hosts file ..."
+#    sudo cp "/etc/hosts" "/etc/hosts.${current_date}.bak"
+#    ok_msg "Backup done!"
+#    ok_msg "File:'/etc/hosts.${current_date}.bak'"
+#  else
+#    sudo touch /etc/hosts
+#  fi
+#
+#  #set new hostname in /etc/hostname
+#  status_msg "Setting hostname to '${new_hostname}' ..."
+#  status_msg "Please wait ..."
+#  sudo hostnamectl set-hostname "${new_hostname}"
+#
+#  #write new hostname to /etc/hosts
+#  status_msg "Writing new hostname to /etc/hosts ..."
+#  echo "127.0.0.1       ${new_hostname}" | sudo tee -a /etc/hosts &>/dev/null
+#  ok_msg "New hostname successfully configured!"
+#  ok_msg "Remember to reboot for the changes to take effect!"
+#}
+#
+##================================================#
+##============ INSTANCE MANAGEMENT ===============#
+##================================================#
+#
+####
+## takes in a systemd service files full path and
+## returns the sub-string with the instance name
+##
+## @param {string}: service file absolute path
+##                  (e.g. '/etc/systemd/system/klipper-<name>.service')
+##
+## => return sub-string containing only the <name> part of the full string
+##
+#function get_instance_name() {
+#  local instance=${1}
+#  local name
+#
+#  name=$(echo "${instance}" | rev | cut -d"/" -f1 | cut -d"." -f2 | cut -d"-" -f1 | rev)
+#
+#  echo "${name}"
+#}
+#
+####
+## returns the instance name/identifier of the klipper service
+## if the klipper service is part of a multi instance setup
+## otherwise returns an emtpy string
+##
+## @param {string}: name - klipper service name (e.g. klipper-name.service)
+##
+#function get_klipper_instance_name() {
+#  local instance=${1}
+#  local name
+#
+#  name=$(echo "${instance}" | rev | cut -d"/" -f1 | cut -d"." -f2 | rev)
+#
+#  local regex="^klipper-[0-9a-zA-Z]+$"
+#  if [[ ${name} =~ ${regex} ]]; then
+#    name=$(echo "${name}" | cut -d"-" -f2)
+#  else
+#    name=""
+#  fi
+#
+#  echo "${name}"
+#}
+#
+####
+## loops through all installed klipper services and saves
+## each instances name in a comma separated format to the pi-installer.ini
+##
+#function set_multi_instance_names() {
+#  read_pi-installer_ini "${FUNCNAME[0]}"
+#
+#  local name
+#  local names=""
+#  local services
+#
+#  services=$(klipper_systemd)
+#
+#  ###
+#  # if value of 'multi_instance_names' is not an empty
+#  # string, delete its value, so it can be re-written
+#  if [[ -n ${multi_instance_names} ]]; then
+#    sed -i "/multi_instance_names=/s/=.*/=/" "${INI_FILE}"
+#  fi
+#
+#  for svc in ${services}; do
+#    name=$(get_klipper_instance_name "${svc}")
+#
+#    if ! grep -Eq "${name}" <<<"${names}"; then
+#      names="${names}${name},"
+#    fi
+#
+#  done
+#
+#  # write up-to-date instance name string to pi-installer.ini
+#  sed -i "/multi_instance_names=/s/=.*/=${names}/" "${INI_FILE}"
+#}
+#
+####
+## Helper function that returns all configured instance names
+##
+## => return an empty string if 0 or 1 klipper instance is installed
+## => return space-separated string for names of the configured instances
+##           if 2 or more klipper instances are installed
+##
+#function get_multi_instance_names() {
+#  read_pi-installer_ini "${FUNCNAME[0]}"
+#  local instance_names=()
+#
+#  ###
+#  # convert the comma separates string from the .pi-installer.ini into
+#  # an array of instance names. a single instance installation
+#  # results in an empty instance_names array
+#  IFS=',' read -r -a instance_names <<<"${multi_instance_names}"
+#
+#  echo "${instance_names[@]}"
+#}
+#
+####
+## helper function that returns all possibly available absolute
+## klipper config directory paths based on their instance name.
+##
+## => return an empty string if klipper is not installed
+## => return space-separated string of absolute config directory paths
+##
+#function get_config_folders() {
+#  local cfg_dirs=()
+#  local instance_names
+#  instance_names=$(get_multi_instance_names)
+#
+#  if [[ -n ${instance_names} ]]; then
+#    for name in ${instance_names}; do
+#      ###
+#      # by pi-installer convention, all instance names of only numbers
+#      # need to be prefixed with 'printer_'
+#      if [[ ${name} =~ ^[0-9]+$ ]]; then
+#        cfg_dirs+=("${HOME}/printer_${name}_data/config")
+#      else
+#        cfg_dirs+=("${HOME}/${name}_data/config")
+#      fi
+#    done
+#  elif [[ -z ${instance_names} && $(klipper_systemd | wc -w) -gt 0 ]]; then
+#    cfg_dirs+=("${HOME}/printer_data/config")
+#  else
+#    cfg_dirs=()
+#  fi
+#
+#  echo "${cfg_dirs[@]}"
+#}
+#
+####
+## helper function that returns all available absolute directory paths
+## based on their instance name and specified target folder
+##
+## @param {string}: folder name - target instance folder name (e.g. config)
+##
+## => return an empty string if klipper is not installed
+## => return space-separated string of absolute directory paths
+##
+#function get_instance_folder_path() {
+#  local folder_name=${1}
+#  local folder_paths=()
+#  local instance_names
+#  local path
+#
+#  instance_names=$(get_multi_instance_names)
+#
+#  if [[ -n ${instance_names} ]]; then
+#    for name in ${instance_names}; do
+#      ###
+#      # by pi-installer convention, all instance names of only numbers
+#      # need to be prefixed with 'printer_'
+#      if [[ ${name} =~ ^[0-9]+$ ]]; then
+#        path="${HOME}/printer_${name}_data/${folder_name}"
+#        if [[ -d ${path} ]]; then
+#          folder_paths+=("${path}")
+#        fi
+#      else
+#        path="${HOME}/${name}_data/${folder_name}"
+#        if [[ -d ${path} ]]; then
+#          folder_paths+=("${path}")
+#        fi
+#      fi
+#    done
+#  elif [[ -z ${instance_names} && $(klipper_systemd | wc -w) -gt 0 ]]; then
+#    path="${HOME}/printer_data/${folder_name}"
+#    if [[ -d ${path} ]]; then
+#      folder_paths+=("${path}")
+#    fi
+#  fi
+#
+#  echo "${folder_paths[@]}"
+#}

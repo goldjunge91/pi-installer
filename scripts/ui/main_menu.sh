@@ -11,9 +11,9 @@ set -e
 #    source "/mnt/c/Users/tozzi/Github/pi-installer/scripts/container_install.sh"
 #}
 
-function program_install_menu() {
-    echo "Program Install Menu"
-}
+#function program_install_menu() {
+#    echo "Program Install Menu"
+#}
 
 function repair_menu() {
     echo "Repair Menu"
@@ -95,10 +95,10 @@ function main_menu() {
                 install_menu
             break;;
             2) clear && print_header
-                find_docker_compose_files
+                container_install_menu
             break;;
             3) clear && print_header
-                program_install_menu
+                program_menu
             break;;
             4) clear && print_header
                 repair_menu
