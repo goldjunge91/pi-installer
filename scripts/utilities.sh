@@ -81,22 +81,22 @@ function init_logfile() {
     echo -e "#================================================================#"
     echo -e "Pi-installer $(get_docker_version)"
     echo -e "#================================================================#"
-  } >> "${log}"
+  } >>"${log}"
 }
 
 function log_info() {
   local message="${1}" log="${LOGFILE}"
-  echo -e "$(timestamp) [INFO]: ${message}" | tr -s " " >> "${log}"
+  echo -e "$(timestamp) [INFO]: ${message}" | tr -s " " >>"${log}"
 }
 
 function log_warning() {
   local message="${1}" log="${LOGFILE}"
-  echo -e "$(timestamp) [WARN]: ${message}" | tr -s " " >> "${log}"
+  echo -e "$(timestamp) [WARN]: ${message}" | tr -s " " >>"${log}"
 }
 
 function log_error() {
   local message="${1}" log="${LOGFILE}"
-  echo -e "$(timestamp) [ERR]: ${message}" | tr -s " " >> "${log}"
+  echo -e "$(timestamp) [ERR]: ${message}" | tr -s " " >>"${log}"
 }
 
 #================================================#
@@ -132,35 +132,34 @@ function init_ini() {
       echo -e "#=================================================#"
       echo -e "# pi-installer v0.0.0"
       echo -e "#"
-    } >> "${INI_FILE}"
+    } >>"${INI_FILE}"
   fi
 
   if ! grep -Eq "^application_updates_available=" "${INI_FILE}"; then
-    echo -e "\napplication_updates_available=\c" >> "${INI_FILE}"
+    echo -e "\napplication_updates_available=\c" >>"${INI_FILE}"
   else
     sed -i "/application_updates_available=/s/=.*/=/" "${INI_FILE}"
   fi
 
   if ! grep -Eq "^backup_before_update=." "${INI_FILE}"; then
-    echo -e "\nbackup_before_update=false\c" >> "${INI_FILE}"
+    echo -e "\nbackup_before_update=false\c" >>"${INI_FILE}"
   fi
 
   if ! grep -Eq "^logupload_accepted=." "${INI_FILE}"; then
-    echo -e "\nlogupload_accepted=false\c" >> "${INI_FILE}"
+    echo -e "\nlogupload_accepted=false\c" >>"${INI_FILE}"
   fi
 
-#  if ! grep -Eq "^fluidd_install_unstable=" "${INI_FILE}"; then
-#    echo -e "\nfluidd_install_unstable=false\c" >> "${INI_FILE}"
-#  fi
+  #  if ! grep -Eq "^fluidd_install_unstable=" "${INI_FILE}"; then
+  #    echo -e "\nfluidd_install_unstable=false\c" >> "${INI_FILE}"
+  #  fi
 
   if ! grep -Eq "^multi_instance_names=" "${INI_FILE}"; then
-    echo -e "\nmulti_instance_names=\c" >> "${INI_FILE}"
+    echo -e "\nmulti_instance_names=\c" >>"${INI_FILE}"
   fi
 
   ### strip all empty lines out of the file
   sed -i "/^[[:blank:]]*$/ d" "${INI_FILE}"
 }
-
 
 function toggle_backup_before_update() {
   read_pi-installer_ini "${FUNCNAME[0]}"
@@ -189,7 +188,7 @@ function add_to_application_updates() {
   local application="${1}"
   local app_update_state="${application_updates_available}"
 
-  if ! grep -Eq "${application}" <<< "${app_update_state}"; then
+  if ! grep -Eq "${application}" <<<"${app_update_state}"; then
     app_update_state="${app_update_state}${application},"
     sed -i "/application_updates_available=/s/=.*/=${app_update_state}/" "${INI_FILE}"
   fi
@@ -230,7 +229,7 @@ function python3_check() {
   major=$(python3 --version | cut -d" " -f2 | cut -d"." -f1)
   minor=$(python3 --version | cut -d"." -f2)
 
-  if (( major >= 3 && minor >= 7 )); then
+  if ((major >= 3 && minor >= 7)); then
     passed="true"
   else
     passed="false"
@@ -240,19 +239,19 @@ function python3_check() {
 }
 
 function dependency_check() {
-  local dep=( "${@}" )
+  local dep=("${@}")
   local packages log_name="dependencies"
   status_msg "Checking for the following dependencies:"
 
   #check if package is installed, if not write its name into array
   for pkg in "${dep[@]}"; do
     echo -e "${cyan}● ${pkg} ${white}"
-    [[ ! $(dpkg-query -f'${Status}' --show "${pkg}" 2>/dev/null) = *\ installed ]] && \
-    packages+=("${pkg}")
+    [[ ! $(dpkg-query -f'${Status}' --show "${pkg}" 2>/dev/null) = *\ installed ]] &&
+      packages+=("${pkg}")
   done
 
   #if array is not empty, install packages from array
-  if (( ${#packages[@]} > 0 )); then
+  if ((${#packages[@]} > 0)); then
     status_msg "Installing the following dependencies:"
     for package in "${packages[@]}"; do
       echo -e "${cyan}● ${package} ${white}"
@@ -285,7 +284,7 @@ function fetch_webui_ports() {
         sed -i '$a'"${interface}_port=${port}" "${INI_FILE}"
       fi
     else
-        sed -i "/^${interface}_port/d" "${INI_FILE}"
+      sed -i "/^${interface}_port/d" "${INI_FILE}"
     fi
   done
 }
@@ -316,9 +315,9 @@ function create_required_folders() {
 
 function update_system_package_lists() {
   local cache_mtime update_age update_interval silent
-  
+
   if [[ $1 == '--silent' ]]; then silent="true"; fi
-  
+
   if [[ -e /var/lib/apt/periodic/update-success-stamp ]]; then
     cache_mtime="$(stat -c %Y /var/lib/apt/periodic/update-success-stamp)"
   elif [[ -e /var/lib/apt/lists ]]; then
@@ -329,10 +328,10 @@ function update_system_package_lists() {
   fi
 
   update_age="$(($(date +'%s') - cache_mtime))"
-  update_interval=$((48*60*60)) # 48hrs
+  update_interval=$((48 * 60 * 60)) # 48hrs
 
   # update if cache is greater than update_interval
-  if (( update_age > update_interval )); then
+  if ((update_age > update_interval)); then
     if [[ ! ${silent} == "true" ]]; then status_msg "Updating package lists..."; fi
     if ! sudo apt-get update --allow-releaseinfo-change &>/dev/null; then
       log_error "Failure while updating package lists!"
@@ -350,10 +349,10 @@ function update_system_package_lists() {
 function check_system_updates() {
   local updates_avail status
   if ! update_system_package_lists --silent; then
-    status="${red}Update check failed!     ${white}" 
+    status="${red}Update check failed!     ${white}"
   else
     updates_avail="$(apt list --upgradeable 2>/dev/null | sed "1d")"
-    
+
     if [[ -n ${updates_avail} ]]; then
       status="${yellow}System upgrade available!${white}"
       # add system to application_updates_available in pi-installer.ini
@@ -362,7 +361,7 @@ function check_system_updates() {
       status="${green}System up to date!       ${white}"
     fi
   fi
-  
+
   echo "${status}"
 }
 
@@ -400,13 +399,13 @@ function check_usergroups() {
     group_tty="false"
   fi
 
-  if [[ ${group_dialout} == "false" || ${group_tty} == "false" ]] ; then
+  if [[ ${group_dialout} == "false" || ${group_tty} == "false" ]]; then
     top_border
     echo -e "| ${yellow}WARNING: Your current user is not in group:${white}           |"
-    [[ ${group_tty} == "false" ]] && \
-    echo -e "| ${yellow}● tty${white}                                                 |"
-    [[ ${group_dialout} == "false" ]] && \
-    echo -e "| ${yellow}● dialout${white}                                             |"
+    [[ ${group_tty} == "false" ]] &&
+      echo -e "| ${yellow}● tty${white}                                                 |"
+    [[ ${group_dialout} == "false" ]] &&
+      echo -e "| ${yellow}● dialout${white}                                             |"
     blank_line
     echo -e "| It is possible that you won't be able to successfully |"
     echo -e "| connect and/or flash the controller board without     |"
@@ -422,22 +421,25 @@ function check_usergroups() {
     while true; do
       read -p "${cyan}###### Add user '${USER}' to group(s) now? (Y/n):${white} " yn
       case "${yn}" in
-        Y|y|Yes|yes|"")
-          select_msg "Yes"
-          status_msg "Adding user '${USER}' to group(s) ..."
-          if [[ ${group_tty} == "false" ]]; then
-            sudo usermod -a -G tty "${USER}" && ok_msg "Group 'tty' assigned!"
-          fi
-          if [[ ${group_dialout} == "false" ]]; then
-            sudo usermod -a -G dialout "${USER}" && ok_msg "Group 'dialout' assigned!"
-          fi
-          ok_msg "Remember to relog/restart this machine for the group(s) to be applied!"
-          break;;
-        N|n|No|no)
-          select_msg "No"
-          break;;
-        *)
-          print_error "Invalid command!";;
+      Y | y | Yes | yes | "")
+        select_msg "Yes"
+        status_msg "Adding user '${USER}' to group(s) ..."
+        if [[ ${group_tty} == "false" ]]; then
+          sudo usermod -a -G tty "${USER}" && ok_msg "Group 'tty' assigned!"
+        fi
+        if [[ ${group_dialout} == "false" ]]; then
+          sudo usermod -a -G dialout "${USER}" && ok_msg "Group 'dialout' assigned!"
+        fi
+        ok_msg "Remember to relog/restart this machine for the group(s) to be applied!"
+        break
+        ;;
+      N | n | No | no)
+        select_msg "No"
+        break
+        ;;
+      *)
+        print_error "Invalid command!"
+        ;;
       esac
     done
   fi
@@ -459,54 +461,60 @@ function set_custom_hostname() {
   while true; do
     read -p "${cyan}###### Do you want to change the hostname? (y/N):${white} " yn
     case "${yn}" in
-      Y|y|Yes|yes)
-        select_msg "Yes"
-        change_hostname
-        break;;
-      N|n|No|no|"")
-        select_msg "No"
-        break;;
-      *)
-        error_msg "Invalid command!";;
+    Y | y | Yes | yes)
+      select_msg "Yes"
+      change_hostname
+      break
+      ;;
+    N | n | No | no | "")
+      select_msg "No"
+      break
+      ;;
+    *)
+      error_msg "Invalid command!"
+      ;;
     esac
   done
 }
 
 function change_hostname() {
-    local new_hostname regex="^[^\-\_]+([0-9a-z]\-{0,1})+[^\-\_]+$"
-    echo
-    top_border
-    echo -e "|  ${green}Allowed characters: a-z, 0-9 and single '-'${white}          |"
-    echo -e "|  ${red}No special characters allowed!${white}                       |"
-    echo -e "|  ${red}No leading or trailing '-' allowed!${white}                  |"
-    bottom_border
+  local new_hostname regex="^[^\-\_]+([0-9a-z]\-{0,1})+[^\-\_]+$"
+  echo
+  top_border
+  echo -e "|  ${green}Allowed characters: a-z, 0-9 and single '-'${white}          |"
+  echo -e "|  ${red}No special characters allowed!${white}                       |"
+  echo -e "|  ${red}No leading or trailing '-' allowed!${white}                  |"
+  bottom_border
 
-    while true; do
-      read -p "${cyan}###### Please set the new hostname:${white} " new_hostname
+  while true; do
+    read -p "${cyan}###### Please set the new hostname:${white} " new_hostname
 
-      if [[ ${new_hostname} =~ ${regex} ]]; then
-        local yn
-        while true; do
-          echo
-          read -p "${cyan}###### Do you want '${new_hostname}' to be the new hostname? (Y/n):${white} " yn
-          case "${yn}" in
-            Y|y|Yes|yes|"")
-              select_msg "Yes"
-              set_hostname "${new_hostname}"
-              break;;
-            N|n|No|no)
-              select_msg "No"
-              abort_msg "Skip hostname change ..."
-              break;;
-            *)
-              print_error "Invalid command!";;
-          esac
-        done
-      else
-        warn_msg "'${new_hostname}' is not a valid hostname!"
-      fi
-      break
-    done
+    if [[ ${new_hostname} =~ ${regex} ]]; then
+      local yn
+      while true; do
+        echo
+        read -p "${cyan}###### Do you want '${new_hostname}' to be the new hostname? (Y/n):${white} " yn
+        case "${yn}" in
+        Y | y | Yes | yes | "")
+          select_msg "Yes"
+          set_hostname "${new_hostname}"
+          break
+          ;;
+        N | n | No | no)
+          select_msg "No"
+          abort_msg "Skip hostname change ..."
+          break
+          ;;
+        *)
+          print_error "Invalid command!"
+          ;;
+        esac
+      done
+    else
+      warn_msg "'${new_hostname}' is not a valid hostname!"
+    fi
+    break
+  done
 }
 
 function set_hostname() {
@@ -631,7 +639,7 @@ function get_multi_instance_names() {
   # convert the comma separates string from the .pi-installer.ini into
   # an array of instance names. a single instance installation
   # results in an empty instance_names array
-  IFS=',' read -r -a instance_names <<< "${multi_instance_names}"
+  IFS=',' read -r -a instance_names <<<"${multi_instance_names}"
 
   echo "${instance_names[@]}"
 }

@@ -12,11 +12,10 @@ for script in "${PFAD}/scripts/ui/"*.sh; do . "${script}"; done
 #===================================================#
 
 function check_installed_software() {
-  # Hier können Sie die Befehle hinzufügen, um zu überprüfen, welche Software bereits installiert ist
-  # Speichern Sie die Ergebnisse in einer Datei oder einer Umgebungsvariablen, um sie später im Menü anzuzeigen
-  :
+    # Hier können Sie die Befehle hinzufügen, um zu überprüfen, welche Software bereits installiert ist
+    # Speichern Sie die Ergebnisse in einer Datei oder einer Umgebungsvariablen, um sie später im Menü anzuzeigen
+    :
 }
-
 
 check_euid
 init_logfile
