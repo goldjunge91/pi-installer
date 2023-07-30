@@ -3,13 +3,13 @@
 set -e
 
 # Placeholder functions
-function new_install_menu() {
-    echo "New Install Menu"
-}
+#function install_menu() {
+#    echo "New Install Menu"
+#}
 
-function container_install_menu() {
-    source "/mnt/c/Users/tozzi/Github/pi-installer/scripts/container_install.sh"
-}
+#function container_install_menu() {
+#    source "/mnt/c/Users/tozzi/Github/pi-installer/scripts/container_install.sh"
+#}
 
 function program_install_menu() {
     echo "Program Install Menu"
@@ -92,10 +92,10 @@ function main_menu() {
         read -p "${cyan}####### Perform action:${white} " action
         case "${action}" in
             1) clear && print_header
-                new_install_menu
+                install_menu
             break;;
             2) clear && print_header
-                container_install_menu
+                docker_compose_menu
             break;;
             3) clear && print_header
                 program_install_menu

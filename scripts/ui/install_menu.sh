@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-
-#=======================================================================#
-# Copyright (C) 2020 - 2023 Dominik Willner <th33xitus@gmail.com>       #
-#                                                                       #
-# This file is part of KIAUH - Klipper Installation And Update Helper   #
-# https://github.com/th33xitus/kiauh                                    #
-#                                                                       #
-# This file may be distributed under the terms of the GNU GPLv3 license #
-#=======================================================================#
-
 set -e
 
 function install_ui() {
@@ -19,40 +9,34 @@ function install_ui() {
   echo -e "|  all necessary dependencies for the various           |"
   echo -e "|  functions on a completely fresh system.              |"
   hr
-  echo -e "| Firmware & API:          | 3rd Party Webinterface:    |"
-  echo -e "|  1) [Klipper]            |  6) [OctoPrint]            |"
-  echo -e "|  2) [Moonraker]          |                            |"
+  echo -e "| Docker:                  | Touchscreen GUI:           |"
+  echo -e "|  1) Docker               |  6) []                     |"
+  echo -e "|  2) Container            |                            |"
   echo -e "|                          | Other:                     |"
-  echo -e "| Klipper Webinterface:    |  7) [PrettyGCode]          |"
-  echo -e "|  3) [Mainsail]           |  8) [Telegram Bot]         |"
-  echo -e "|  4) [Fluidd]             |  9) $(obico_install_title) |"
-  echo -e "|                          | 10) [OctoEverywhere]       |"
-  echo -e "|                          | 11) [Mobileraker]          |"
-  echo -e "| Touchscreen GUI:         |                            |"
-  echo -e "|  5) [KlipperScreen]      | Webcam Streamer:           |"
+  echo -e "| Text                     |  7) []                     |"
+  echo -e "|  3) [???]                |  8) []                     |"
+  echo -e "|  4) []                   |  9) []                     |"
+  echo -e "|                          | 10) []                     |"
+  echo -e "|                          | 11) []                     |"
+  echo -e "| Gruppenname:             |                            |"
+  echo -e "|  5) []                   | Gruppenname:               |"
   echo -e "|                          | 12) [Crowsnest]            |"
   back_footer
 }
+####   echo -e "|  4) []                   |  9) $(obico_install_title) |"
 
 function install_menu() {
   clear -x && sudo -v && clear -x # (re)cache sudo credentials so password prompt doesn't bork ui
   print_header
   install_ui
-
-  ### save all installed webinterface ports to the ini file
-  fetch_webui_ports
-
-  ### save all klipper multi-instance names to the ini file
-  set_multi_instance_names
-
   local action
   while true; do
     read -p "${cyan}####### Perform action:${white} " action
     case "${action}" in
       1)
-        do_action "start_klipper_setup" "install_ui";;
+        do_action "start_docker_setup" "install_ui";;
       2)
-        do_action "moonraker_setup_dialog" "install_ui";;
+        do_action "container_install" "install_ui";;
       3)
         do_action "install_mainsail" "install_ui";;
       4)

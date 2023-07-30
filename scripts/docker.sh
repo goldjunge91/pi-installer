@@ -22,9 +22,9 @@ function countdown_timer {
 #sudo usermod -aG docker $USER || error "Failed to add user to the Docker usergroup."
 #echo "Remember to logoff/reboot for the changes to take effect."
 
-function install_docker {
+function start_docker_setup()  {
     # Installation von Docker
-    curl -sSL https://get.docker.com | sh || error "Failed to install Docker."
+    #curl -sSL https://get.docker.com | sh || error "Failed to install Docker."
     countdown_timer 3
     
     # Überprüfung, ob Docker erfolgreich installiert wurde
@@ -35,6 +35,6 @@ function install_docker {
         error "Fehler bei der Installation von Docker!"
     fi
     countdown_timer 3
-    sudo usermod -aG docker $USER || error "Failed to add user to the Docker usergroup."
+    #sudo usermod -aG docker $USER || error "Failed to add user to the Docker usergroup."
     echo "Remember to logoff/reboot for the changes to take effect."
 }
